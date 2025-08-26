@@ -41,25 +41,33 @@ bot.start(async (ctx) => {
 bot.on('contact', async (ctx) => {
   const chatId = ctx.chat.id;
   const state = userStates[chatId];
-  if (state && ctx.message.contact) {
-    state.phoneNumber = ctx.message.contact.phone_number;
-    // Продовжуємо фінальний крок, якщо контакт надано після трьох питань
-    const user = ctx.from;
-    const report = `
+  if (!state || !ctx.message.contact) return;
+
+  state.phoneNumber = ctx.message.contact.phone_number;
+
+  // Формуємо фінальний звіт
+  const user = ctx.from;
+  const name = user.first_name || 'Користувач';
+  const usernameLink = user?.username ? `https://t.me/${user.username}` : '';
+
+  const report = `
 📋 Новий запит від користувача:
 
+👤 Ім’я: <b>${name}</b>
 1️⃣ Проблеми з теплоізоляцією: <b>${state.answers.q1}</b>
 2️⃣ Конденсат / запотівання: <b>${state.answers.q2}</b>
 3️⃣ Потрібна консультація: <b>${state.answers.q3}</b>
-${state.phoneNumber ? `📞 Телефон: <b>${state.phoneNumber}</b>` : ''}
+💬 ${usernameLink ? `<a href="${usernameLink}">Написати користувачу</a>` : 'Username відсутній'}
+📞 Телефон: <b>${state.phoneNumber}</b>
 `;
-    await ctx.telegram.sendMessage(ADMIN_CHAT_ID, report, { parse_mode: 'HTML' });
-    await ctx.reply(
-      '🎁 При комплексних роботах ми даруємо вам безкоштовні ручки на конструкції — маленький бонус від нас для вашого комфорту ✨\n\n✅ Дякую за відповіді! Наш спеціаліст зв’яжеться з Вами 💬',
-      Markup.keyboard([['🔁 Відповісти ще раз']]).resize()
-    );
-    delete userStates[chatId];
-  }
+
+  await ctx.telegram.sendMessage(ADMIN_CHAT_ID, report, { parse_mode: 'HTML' });
+  await ctx.reply(
+    '🎁 При комплексних роботах ми даруємо вам безкоштовні ручки на конструкції — маленький бонус від нас для вашого комфорту ✨\n\n✅ Дякую за відповіді! Наш спеціаліст зв’яжеться з Вами 💬',
+    Markup.keyboard([['🔁 Відповісти ще раз']]).resize()
+  );
+
+  delete userStates[chatId];
 });
 
 // Основна логіка опитування
@@ -85,7 +93,7 @@ bot.on('text', async (ctx) => {
       state.answers.q1 = text;
       state.step = 2;
       await ctx.reply(
-        'Чи помічали Ви конденсат або запотівання на вікнах?',
+        'Чи помічали Ви конденсат або запотівання на вікнах та відкосах?',
         Markup.keyboard([['Так'], ['Ні']]).resize().oneTime()
       );
       break;
@@ -102,38 +110,17 @@ bot.on('text', async (ctx) => {
     case 3:
       state.answers.q3 = text;
 
-      const user = ctx.from;
-      const usernameLink = user?.username ? `https://t.me/${user.username}` : '';
-
-      // Якщо username немає, запитуємо номер телефону
-      if (!user?.username && !state.phoneRequested) {
-        state.phoneRequested = true;
-        await ctx.reply(
-          'У Вас немає username в Telegram. Будь ласка, надішліть свій номер телефону для зворотного зв’язку.',
-          Markup.keyboard([
-            Markup.button.contactRequest('Надати номер телефону')
-          ]).resize().oneTime()
-        );
-        return;
-      }
-
-      const report = `
-📋 Новий запит від користувача:
-
-1️⃣ Проблеми з теплоізоляцією: <b>${state.answers.q1}</b>
-2️⃣ Конденсат / запотівання: <b>${state.answers.q2}</b>
-3️⃣ Потрібна консультація: <b>${state.answers.q3}</b>
-${usernameLink ? `💬 <a href="${usernameLink}">Написати користувачу</a>` : ''}
-${state.phoneNumber ? `📞 Телефон: <b>${state.phoneNumber}</b>` : ''}
-`;
-
-      await ctx.telegram.sendMessage(ADMIN_CHAT_ID, report, { parse_mode: 'HTML' });
+      // Завжди запитуємо номер телефону
+      state.phoneRequested = true;
+      state.step = 4; // чекаємо на контакт
       await ctx.reply(
-        '🎁 При комплексних роботах ми даруємо вам безкоштовні ручки на конструкції — маленький бонус від нас для вашого комфорту ✨\n\n✅ Дякую за відповіді! Наш спеціаліст зв’яжеться з Вами 💬',
-        Markup.keyboard([['🔁 Відповісти ще раз']]).resize()
+        'Будь ласка, надішліть свій номер телефону для зворотного зв’язку.',
+        Markup.keyboard([Markup.button.contactRequest('Надати номер телефону')]).resize().oneTime()
       );
+      break;
 
-      delete userStates[chatId];
+    case 4:
+      // нічого не робимо, чекаємо на контакт через bot.on('contact')
       break;
   }
 });
